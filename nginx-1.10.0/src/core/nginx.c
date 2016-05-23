@@ -238,7 +238,7 @@ main(int argc, char *const *argv)
 
     ngx_memzero(&init_cycle, sizeof(ngx_cycle_t));
     init_cycle.log = log;
-    ngx_cycle = &init_cycle;
+    ngx_cycle = &init_cycle; // 将init_cycle赋值给全局变量ngx_cycle
 
     init_cycle.pool = ngx_create_pool(1024, log);
     if (init_cycle.pool == NULL) {
@@ -264,7 +264,10 @@ main(int argc, char *const *argv)
     if (ngx_crc32_table_init() != NGX_OK) {
         return 1;
     }
-
+    /*
+    * 新版本master进程通过ngx_add_inherited_sockets方法由环境变量读取平滑升级信息，并对
+    * 旧版本Nginx服务监听的句柄做继承处理
+    */
     if (ngx_add_inherited_sockets(&init_cycle) != NGX_OK) {
         return 1;
     }
@@ -272,7 +275,9 @@ main(int argc, char *const *argv)
     if (ngx_preinit_modules() != NGX_OK) {
         return 1;
     }
-
+    /* 重要
+    * 读取配置并初始化各个模块
+    */
     cycle = ngx_init_cycle(&init_cycle);
     if (cycle == NULL) {
         if (ngx_test_config) {
@@ -445,7 +450,7 @@ ngx_add_inherited_sockets(ngx_cycle_t *cycle)
     if (inherited == NULL) {
         return NGX_OK;
     }
-
+    printf("inherited: %s\n", inherited);
     ngx_log_error(NGX_LOG_NOTICE, cycle->log, 0,
                   "using inherited sockets from \"%s\"", inherited);
 
@@ -701,7 +706,7 @@ ngx_get_options(int argc, char *const *argv)
     for (i = 1; i < argc; i++) {
 
         p = (u_char *) argv[i];
-
+        ngx_log_stderr(0, "option[%d]: \"%s\"", (int)i, argv[i]);
         if (*p++ != '-') {
             ngx_log_stderr(0, "invalid option: \"%s\"", argv[i]);
             return NGX_ERROR;

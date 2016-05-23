@@ -49,7 +49,7 @@ ngx_init_cycle(ngx_cycle_t *old_cycle)
     ngx_open_file_t     *file;
     ngx_listening_t     *ls, *nls;
     ngx_core_conf_t     *ccf, *old_ccf;
-    ngx_core_module_t   *module;
+    ngx_core_module_t   *module;            // 对应的是核心模块NGX_CORE_MODULE
     char                 hostname[NGX_MAXHOSTNAMELEN];
 
     ngx_timezone_update();
@@ -122,6 +122,10 @@ ngx_init_cycle(ngx_cycle_t *old_cycle)
     cycle->paths.nelts = 0;
     cycle->paths.size = sizeof(ngx_path_t *);
     cycle->paths.nalloc = n;
+    /*
+    * 这里都把内存池给赋值给对象的内存池属性， 因为在内存和资源管理方面，nginx委托内存池统一管理， 这里可以通过具体的对象找到
+    * 它用的内存池对象， 方便实现内存和资源方面的管理。  
+    */
     cycle->paths.pool = pool;
 
 
@@ -224,7 +228,7 @@ ngx_init_cycle(ngx_cycle_t *old_cycle)
         }
 
         module = cycle->modules[i]->ctx;
-
+        // 调用所有核心模块的create conf方法，开始构造用于存储配置项的结构体
         if (module->create_conf) {
             rv = module->create_conf(cycle);
             if (rv == NULL) {
@@ -281,7 +285,9 @@ ngx_init_cycle(ngx_cycle_t *old_cycle)
         ngx_log_stderr(0, "the configuration file %s syntax is ok",
                        cycle->conf_file.data);
     }
-
+    /*
+    * 调用所有NGX—CORE—MODULE核心模块的init_conf方法。这一步骤的目的在于让所有核心模块在解析完配置项后可以做综合性处理，
+    */
     for (i = 0; cycle->modules[i]; i++) {
         if (cycle->modules[i]->type != NGX_CORE_MODULE) {
             continue;

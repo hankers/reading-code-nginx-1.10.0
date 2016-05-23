@@ -244,19 +244,29 @@
 
 
 struct ngx_module_s {
+    // 模块在某一个分类下的序号，nginx模块可以分为四种：core、event 、http和mail，每个模块都会各自计数
     ngx_uint_t            ctx_index;
+    // 模块在所有模块中的序号
     ngx_uint_t            index;
-
+    // 模块名称
     char                 *name;
-
+    // spare系列保留变量
     ngx_uint_t            spare0;
     ngx_uint_t            spare1;
-
+    // 模块版本
     ngx_uint_t            version;
     const char           *signature;
-
+    /* 
+    * ctx用于指向一类模块的上下文结构体,ctx指向特定类型模块的公共接口
+    * HTTP框架初始化时完成？
+    */
     void                 *ctx;
+    // 处理nginx.conf配置项
     ngx_command_t        *commands;
+    /*
+    * type表示该模块的类型，它与ctx指针是紧密相关的。在官方Nginx中，它的取值范围是以下5种：NGX_HTTP_MODULE、NGX_CORE_MODULE、
+    * NGX_CONF_MODULE、NGX_EVENT_MODULE、NGX_MAIL_MODULE。
+    */
     ngx_uint_t            type;
 
     ngx_int_t           (*init_master)(ngx_log_t *log);

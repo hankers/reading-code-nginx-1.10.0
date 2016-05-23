@@ -30,6 +30,8 @@ ngx_preinit_modules(void)
     for (i = 0; ngx_modules[i]; i++) {
         ngx_modules[i]->index = i;
         ngx_modules[i]->name = ngx_module_names[i];
+
+        printf("module index: %d, module name: %s\n", (int)i, ngx_module_names[i]);
     }
 
     ngx_modules_n = i;
