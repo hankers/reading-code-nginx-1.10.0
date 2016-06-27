@@ -54,7 +54,7 @@ ngx_memalign(size_t alignment, size_t size, ngx_log_t *log)
     void  *p;
     int    err;
 
-    err = posix_memalign(&p, alignment, size);
+    err = posix_memalign(&p, alignment, size);  //stdlib.h 新接口
 
     if (err) {
         ngx_log_error(NGX_LOG_EMERG, log, err,
@@ -75,7 +75,7 @@ ngx_memalign(size_t alignment, size_t size, ngx_log_t *log)
 {
     void  *p;
 
-    p = memalign(alignment, size);
+    p = memalign(alignment, size);  //malloc.h 老接口
     if (p == NULL) {
         ngx_log_error(NGX_LOG_EMERG, log, ngx_errno,
                       "memalign(%uz, %uz) failed", alignment, size);

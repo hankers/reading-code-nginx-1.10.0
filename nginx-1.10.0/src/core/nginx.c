@@ -36,7 +36,7 @@ static ngx_conf_enum_t  ngx_debug_points[] = {
     { ngx_null_string, 0 }
 };
 
-
+// 对应的存放参数的值的结构体为ngx_core_conf_t
 static ngx_command_t  ngx_core_commands[] = {
 
     { ngx_string("daemon"),

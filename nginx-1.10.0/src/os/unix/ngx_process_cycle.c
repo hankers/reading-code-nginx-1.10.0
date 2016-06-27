@@ -68,7 +68,10 @@ static ngx_cycle_t      ngx_exit_cycle;
 static ngx_log_t        ngx_exit_log;
 static ngx_open_file_t  ngx_exit_log_file;
 
-
+/*
+* master进程不需要处理网络事件，它不负责业务的执行，只会通过管理worker等子进
+* 程来实现重启服务、平滑升级、更换日志文件、配置文件实时生效等功能
+*/
 void
 ngx_master_process_cycle(ngx_cycle_t *cycle)
 {
@@ -95,7 +98,29 @@ ngx_master_process_cycle(ngx_cycle_t *cycle)
     sigaddset(&set, ngx_signal_value(NGX_TERMINATE_SIGNAL));
     sigaddset(&set, ngx_signal_value(NGX_SHUTDOWN_SIGNAL));
     sigaddset(&set, ngx_signal_value(NGX_CHANGEBIN_SIGNAL));
-
+/*
+    master工作流程中的7个全局标志位变量
+┏━━━━━━━┳━━━━━━━━━━━━━━━┳━━━━━━━━━━━━━━━━━━━━━━━━┓
+┃    信  号    ┃  对应进程中的全局标志位变量  ┃    意义                                        ┃
+┣━━━━━━━╋━━━━━━━━━━━━━━━╋━━━━━━━━━━━━━━━━━━━━━━━━┫
+┃  QUIT        ┃    ngx_quit                     ┃  优雅地关闭整个服务                      ┃
+┣━━━━━━━╋━━━━━━━━━━━━━━━╋━━━━━━━━━━━━━━━━━━━━━━━━┫
+┃  TERM或者INT ┃ngx_terminate                     ┃  强制关闭整个服务                              ┃
+┣━━━━━━━╋━━━━━━━━━━━━━━━╋━━━━━━━━━━━━━━━━━━━━━━━━┫
+┃  USR1        ┃    ngx reopen                   ┃  重新打开服务中的所有文件                      ┃
+┣━━━━━━━╋━━━━━━━━━━━━━━━╋━━━━━━━━━━━━━━━━━━━━━━━━┫
+┃              ┃                                 ┃  所有子进程不再接受处理新的连接，实际相当于对  ┃
+┃  WINCH       ┃ngx_noaccept                     ┃                                                ┃
+┃              ┃                                 ┃所有的予进程发送QUIT信号量                      ┃
+┣━━━━━━━╋━━━━━━━━━━━━━━━╋━━━━━━━━━━━━━━━━━━━━━━━━┫
+┃  USR2        ┃ngx_change_binary                ┃  平滑升级到新版本的Nginx程序                   ┃
+┣━━━━━━━╋━━━━━━━━━━━━━━━╋━━━━━━━━━━━━━━━━━━━━━━━━┫
+┃  HUP         ┃ngx_reconfigure                  ┃  重读配置文件并使服务对新配景项生效            ┃
+┣━━━━━━━╋━━━━━━━━━━━━━━━╋━━━━━━━━━━━━━━━━━━━━━━━━┫
+┃              ┃                                 ┃  有子进程意外结束，这时需要监控所有的子进程，  ┃
+┃  CHLD        ┃    ngx_reap                     ┃也就是ngx_reap_children方法所做的工作           ┃
+┗━━━━━━━┻━━━━━━━━━━━━━━━┻━━━━━━━━━━━━━━━━━━━━━━━━┛
+*/  
     if (sigprocmask(SIG_BLOCK, &set, NULL) == -1) {
         ngx_log_error(NGX_LOG_ALERT, cycle->log, ngx_errno,
                       "sigprocmask() failed");
@@ -126,9 +151,10 @@ ngx_master_process_cycle(ngx_cycle_t *cycle)
 
 
     ccf = (ngx_core_conf_t *) ngx_get_conf(cycle->conf_ctx, ngx_core_module);
-
+    // 启动worker进程
     ngx_start_worker_processes(cycle, ccf->worker_processes,
                                NGX_PROCESS_RESPAWN);
+    // 启动cache manager，cache loader进程
     ngx_start_cache_manager_processes(cycle, 0);
 
     ngx_new_binary = 0;
@@ -137,6 +163,10 @@ ngx_master_process_cycle(ngx_cycle_t *cycle)
     live = 1;
 
     for ( ;; ) {
+        /*
+        * delay用来等待子进程退出的时间，由于我们接受到SIGINT信号后，我们需要先发送信号给子进程，而子进程的退出需要一定的时间，
+        * 超时时如果子进程已退出，我们父进程就直接退出，否则发送sigkill信号给子进程(强制退出),然后再退出。
+        */
         if (delay) {
             if (ngx_sigalrm) {
                 sigio = 0;
@@ -216,7 +246,11 @@ ngx_master_process_cycle(ngx_cycle_t *cycle)
 
             continue;
         }
-
+        /*
+        * 如果ngx_reconfigure标志位为0，则跳到第13步检查ngx_restart标志位。如果ngx_reconfigure为l，则表示需要重新读取配置文件。
+        * Nginx不会再让原先的worker等子进程再重新读取配置文件，它的策略是重新初始化ngx_cycle_t结构体，用它来读取新的配置文件，
+        * 再拉起新的worker进程，销毁旧的worker进程。本步中将会调用ngx_init_cycle方法重新初始化ngx_cycle_t结构体。
+        */
         if (ngx_reconfigure) {
             ngx_reconfigure = 0;
 
@@ -230,7 +264,7 @@ ngx_master_process_cycle(ngx_cycle_t *cycle)
             }
 
             ngx_log_error(NGX_LOG_NOTICE, cycle->log, 0, "reconfiguring");
-
+            // 重新初始化config，并重新启动新的worker 
             cycle = ngx_init_cycle(cycle);
             if (cycle == NULL) {
                 cycle = (ngx_cycle_t *) ngx_cycle;
@@ -239,7 +273,7 @@ ngx_master_process_cycle(ngx_cycle_t *cycle)
 
             ngx_cycle = cycle;
             ccf = (ngx_core_conf_t *) ngx_get_conf(cycle->conf_ctx,
-                                                   ngx_core_module);
+            // 调用ngx_start_worker_processes方法再拉起一批worker进程，这些worker进程将使用新ngx_cycle_t绪构体。                                       ngx_core_module);
             ngx_start_worker_processes(cycle, ccf->worker_processes,
                                        NGX_PROCESS_JUST_RESPAWN);
             ngx_start_cache_manager_processes(cycle, 1);
@@ -248,6 +282,7 @@ ngx_master_process_cycle(ngx_cycle_t *cycle)
             ngx_msleep(100);
 
             live = 1;
+            // 向原先的（并非刚刚拉起的）所有子进程发送QUIT信号，要求它们优雅地退出自己的进程
             ngx_signal_worker_processes(cycle,
                                         ngx_signal_value(NGX_SHUTDOWN_SIGNAL));
         }
@@ -352,7 +387,7 @@ ngx_start_worker_processes(ngx_cycle_t *cycle, ngx_int_t n, ngx_int_t type)
     ngx_memzero(&ch, sizeof(ngx_channel_t));
 
     ch.command = NGX_CMD_OPEN_CHANNEL;
-
+    // 需要搞懂进程间的通信方式！！！
     for (i = 0; i < n; i++) {
 
         ngx_spawn_process(cycle, ngx_worker_process_cycle,
@@ -422,7 +457,16 @@ ngx_start_cache_manager_processes(ngx_cycle_t *cycle, ngx_uint_t respawn)
     ngx_pass_open_channel(cycle, &ch);
 }
 
-
+/*
+子进程创建的时候，父进程的东西都会被子进程继承，所以后面创建的子进程能够得到前面创建的子进程的channel信息，直接可以和他们通信，
+那么前面创建的进程如何知道后面的进程信息呢？ 很简单，既然前面创建的进程能够接受消息，那么我就发个信息告诉他后面的进程
+的channel,并把信息保存在channel[0]中，这样就可以相互通信了。
+*/
+/*
+                                 |----------(ngx_worker_process_cycle->ngx_worker_process_init)
+    ngx_start_worker_processes---| ngx_processes[]相关的操作赋值流程
+                                 |----------ngx_pass_open_channel
+*/
 static void
 ngx_pass_open_channel(ngx_cycle_t *cycle, ngx_channel_t *ch)
 {

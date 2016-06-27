@@ -34,6 +34,7 @@ struct ngx_event_s {
 
     unsigned         accept:1;
 
+
     /* used to detect the stale events in kqueue and epoll */
     unsigned         instance:1;
 
@@ -174,7 +175,7 @@ struct ngx_event_aio_s {
 
 #endif
 
-
+// ngx_event_module_t中的actions成员是定义事件驱动模块的核心方法
 typedef struct {
     ngx_int_t  (*add)(ngx_event_t *ev, ngx_int_t event, ngx_uint_t flags);
     ngx_int_t  (*del)(ngx_event_t *ev, ngx_int_t event, ngx_uint_t flags);
@@ -442,13 +443,18 @@ typedef struct {
 #endif
 } ngx_event_conf_t;
 
-
+/*
+* 所有的核心模块NGX_CORE_MODULE对应的上下文ctx为ngx_core_module_t，子模块，例如http{} NGX_HTTP_MODULE模块对应的为上下文为ngx_http_module_t
+* events{} NGX_EVENT_MODULE模块对应的为上下文为ngx_event_module_t
+*/
 typedef struct {
+    // 事件模块的名称
     ngx_str_t              *name;
-
+    // 在解析配置项前，这个回调方法用于创建存储配置项参数的结构体
     void                 *(*create_conf)(ngx_cycle_t *cycle);
+    // 在解析配置项完成后，init_conf方法会被调用，用以综合处理当前事件模块感兴趣的全部配置项
     char                 *(*init_conf)(ngx_cycle_t *cycle, void *conf);
-
+    // 对于事件驱动机制，每个事件模块需要实现的10个抽象方法
     ngx_event_actions_t     actions;
 } ngx_event_module_t;
 

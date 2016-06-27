@@ -74,12 +74,21 @@
 
 #define NGX_MAX_CONF_ERRSTR  1024
 
-
+// nginx配置文件中的一条指令对应一个ngx_command_t结构体
 struct ngx_command_s {
+    // 指令名字
     ngx_str_t             name;
+    // 配置指令属性的集合  如worker_processes这条指令对应的type定义为：NGX_MAIN_CONF|NGX_DIRECT_CONF|NGX_CONF_TAKE1
     ngx_uint_t            type;
+    /* 函数指针，当Nginx解析配置文件，碰到指令时，该执行怎样的操作。而该操作本身，自然是用来设置本模块所对应的ngx_<module name>_conf_t结构体
+       cf里面存储的是从配置文件里面解析出的内容，conf是最终用来存储解析内容的内存空间，cmd为存到空间的那个地方(使用偏移量来衡量)
+    */
     char               *(*set)(ngx_conf_t *cf, ngx_command_t *cmd, void *conf);
+    // 
     ngx_uint_t            conf;
+    /* 通常用于使用预设的解析方法解析配置项，这是配置模块的一个优秀设计。它需要与conf配合使用
+    *  标记ngx_<module name>_conf_t中某成员变量的偏移量
+    */
     ngx_uint_t            offset;
     void                 *post;
 };
@@ -124,6 +133,8 @@ struct ngx_conf_s {
     ngx_conf_file_t      *conf_file;
     ngx_log_t            *log;
 
+    //指向ngx_cycle_t->conf_ctx 有多少个模块，就有多少个ctx指针数组成员  conf.ctx = cycle->conf_ctx;见ngx_init_cycle
+    //这个ctx每次在在进入对应的server{}  location{}前都会指向零时保存父级的ctx，该{}解析完后在恢复到父的ctx。可以参考ngx_http_core_server，ngx_http_core_location
     void                 *ctx;
     ngx_uint_t            module_type;
     ngx_uint_t            cmd_type;

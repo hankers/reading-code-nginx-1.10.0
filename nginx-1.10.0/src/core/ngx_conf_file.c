@@ -108,6 +108,11 @@ ngx_conf_parse(ngx_conf_t *cf, ngx_str_t *filename)
     ngx_buf_t         buf, *tbuf;
     ngx_conf_file_t  *prev, conf_file;
     ngx_conf_dump_t  *cd;
+    /*
+    状态0: 打开配置文件
+    状态1: 解析配置块内容
+    状态2: 解析配置参数内容
+    */
     enum {
         parse_file = 0,
         parse_block,
@@ -130,7 +135,10 @@ ngx_conf_parse(ngx_conf_t *cf, ngx_str_t *filename)
                                filename->data);
             return NGX_CONF_ERROR;
         }
-
+        /* 
+        保存cf->conf_file 的上文
+        解析该配置文件之前的配置用prev暂存 
+        */
         prev = cf->conf_file;
 
         cf->conf_file = &conf_file;
@@ -204,6 +212,11 @@ ngx_conf_parse(ngx_conf_t *cf, ngx_str_t *filename)
 
 
     for ( ;; ) {
+        /*
+        函数ngx_conf_read_token对配置文件内容逐个字符扫描并解析为单个的token，当然，该函数并不会频繁的去读取配置文件，它每次从
+        文件内读取足够多的内容以填满一个大小为NGX_CONF_BUFFER的缓存区（除了最后一次，即配置文件剩余内容本来就不够了），这个缓存
+        区在函数 ngx_conf_parse内申请并保存引用到变量cf->conf_file->buffer内，函数 ngx_conf_read_token反复使用该缓存区
+        */
         rc = ngx_conf_read_token(cf);
 
         /*
@@ -315,7 +328,15 @@ done:
     return NGX_CONF_OK;
 }
 
+/*
+    这个功能是在函数ngx_conf_handle中实现的，整个过程中需要遍历所有模块中的所有指令，如果找到一个，就直接调用指令的set 函数，
+    完成对模块的配置信息的设置。 这里主要的过程就是判断是否是找到，需要判断下面一些条件： 
 
+  a  名字一致。配置文件中指令的名字和模块指令中的名字需要一致
+  b  模块类型一致。配置文件指令处理的模块类型和当前模块一致
+  c  指令类型一致。 配置文件指令类型和当前模块指令一致
+  d  参数个数一致。配置文件中参数的个数和当前模块的当前指令参数一致。 
+*/
 static ngx_int_t
 ngx_conf_handler(ngx_conf_t *cf, ngx_int_t last)
 {
@@ -409,14 +430,16 @@ ngx_conf_handler(ngx_conf_t *cf, ngx_int_t last)
             /* set up the directive's configuration context */
 
             conf = NULL;
-
+            // 处理最上层的指令，每个模块一份
             if (cmd->type & NGX_DIRECT_CONF) {
                 conf = ((void **) cf->ctx)[cf->cycle->modules[i]->index];
 
-            } else if (cmd->type & NGX_MAIN_CONF) {
+            } else if (cmd->type & NGX_MAIN_CONF) { 
+                // 这样的配置包括event，http，三级指针，数组中存的是指针的指针，防止和NGX_DIRECT_CONF冲突
                 conf = &(((void **) cf->ctx)[cf->cycle->modules[i]->index]);
 
             } else if (cf->ctx) {
+                // 处理http模块第一级指针代表http,serv,loc，第二级代表指定http,serv,loc的数组，第三级为内容
                 confp = *(void **) ((char *) cf->ctx + cmd->conf);
 
                 if (confp) {

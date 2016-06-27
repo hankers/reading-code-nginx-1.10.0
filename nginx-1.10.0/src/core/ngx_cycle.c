@@ -274,7 +274,7 @@ ngx_init_cycle(ngx_cycle_t *old_cycle)
         ngx_destroy_cycle_pools(&conf);
         return NULL;
     }
-
+    /* 解析配置文件中的配置项 */
     if (ngx_conf_parse(&conf, &cycle->conf_file) != NGX_CONF_OK) {
         environ = senv;
         ngx_destroy_cycle_pools(&conf);
@@ -811,7 +811,7 @@ old_shm_zone_done:
 
     return cycle;
 
-
+// 神马语法？？？
 failed:
 
     if (!ngx_is_init_cycle(old_cycle)) {

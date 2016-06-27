@@ -268,16 +268,24 @@ struct ngx_module_s {
     * NGX_CONF_MODULE、NGX_EVENT_MODULE、NGX_MAIL_MODULE。
     */
     ngx_uint_t            type;
+    /*
+    * 在Nginx的启动、停止过程中，以下7个函数指针表示有7个执行点会分别调用这7种方法。对于任一个方法而言，
+    * 如果不需要Nginx在某个时刻执行它，那么简单地把它设为NULL空指针即可
+    */
 
     ngx_int_t           (*init_master)(ngx_log_t *log);
-
+    // init_module回调方法在初始化所有模块时被调用。在master/worker模式下，这个阶段将在启动worker子进程前完成
     ngx_int_t           (*init_module)(ngx_cycle_t *cycle);
-
+    /* 
+    * init_process回调方法在正常服务前被调用。在master/worker模式下，多个worker子进程已经产生，在每个worker进程
+    * 的初始化过程会调用所有模块的init_process函数
+    */
     ngx_int_t           (*init_process)(ngx_cycle_t *cycle);
     ngx_int_t           (*init_thread)(ngx_cycle_t *cycle);
     void                (*exit_thread)(ngx_cycle_t *cycle);
+    // exit_process回调方法在服务停止前调用。在master/worker模式下，worker进程会在退出前调用它，见ngx_worker_process_exit
     void                (*exit_process)(ngx_cycle_t *cycle);
-
+    // exit_master回调方法将在master进程退出前被调用
     void                (*exit_master)(ngx_cycle_t *cycle);
 
     uintptr_t             spare_hook0;
@@ -290,10 +298,17 @@ struct ngx_module_s {
     uintptr_t             spare_hook7;
 };
 
-
+/*
+ngx_core_module_t上下文是以配置项的解析作为基础的，它提供了create_conf回调方法来创建存储配置顼的数据结构，
+在读取nginx.conf配置文件时，会根据模块中的ngx_command_t把解析出的配置项存放在这个数据结构中；它还提供了init_conf
+回调方法，用于在解析完配置文件后，使用解析出的配置项初始化核心模块功能。除此以外，Nginx框架不会约束核心模块的接口、
+功能，这种简洁、灵活的设计为Nginx实现动态可配置性、动态可扩展性、动态可定制性带来了极大的便利，这样，在每个模块的
+功能实现中就会较少地考虑如何不停止服务、不重启服务来实现以上功能。
+*/
 typedef struct {
     ngx_str_t             name;
     void               *(*create_conf)(ngx_cycle_t *cycle);
+    // 它还提供了init_conf回调方法，用于在解析完配置文件后，使用解析出的配置项初始化核心模块功能
     char               *(*init_conf)(ngx_cycle_t *cycle, void *conf);
 } ngx_core_module_t;
 
